@@ -88,6 +88,15 @@ Each part of this problem will require you to wrangle the data and then do one o
 
 a. Produce a table that provides the frequency of the different collision types, ordered from most to least common.  What type is most common? What type is least common?
 
+```{r}
+crash %>% 
+  select(COLLIS_TYP_CD) %>% 
+  group_by(COLLIS_TYP_CD) %>% 
+  count %>% 
+  arrange(desc(n)) %>% 
+  as.data.frame()
+```
+Rear-End (type 3) is the most common collision type and Miscellaneous (type &) is the least common one.
 
 
 b.  For the three most common collision types, create a table that contains:
@@ -95,6 +104,15 @@ b.  For the three most common collision types, create a table that contains:
     + The proportion of each collision type by weather condition.
     
 Arrange the table by weather and within type, most to least common collision type.  
+```{r}
+crash %>% 
+  select(COLLIS_TYP_CD, WTHR_COND_CD) %>%
+  group_by(COLLIS_TYP_CD, WTHR_COND_CD) %>% 
+  count %>%
+  mutate(prop_type_by_weather = n/sum(crash$n)) %>%
+  arrange(desc(n))
+
+```
 
 
 
