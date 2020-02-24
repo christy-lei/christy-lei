@@ -15,6 +15,8 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```{r}
 # Put all necessary libraries here
 library(tidyverse)
+library(ggplot2)
+library(ggthemes)
 ```
 
 
@@ -90,9 +92,7 @@ a. Produce a table that provides the frequency of the different collision types,
 
 ```{r}
 crash %>% 
-  select(COLLIS_TYP_CD) %>% 
-  group_by(COLLIS_TYP_CD) %>% 
-  count %>% 
+  count(COLLIS_TYP_CD) %>% 
   arrange(desc(n)) %>% 
   as.data.frame()
 ```
@@ -106,22 +106,53 @@ b.  For the three most common collision types, create a table that contains:
 Arrange the table by weather and within type, most to least common collision type.  
 ```{r}
 crash %>% 
-  select(COLLIS_TYP_CD, WTHR_COND_CD) %>%
-  group_by(COLLIS_TYP_CD, WTHR_COND_CD) %>% 
-  count %>%
-  mutate(prop_type_by_weather = n/sum(crash$n)) %>%
-  arrange(desc(n))
-
+  count(COLLIS_TYP_CD, WTHR_COND_CD) %>%
+  group_by(WTHR_COND_CD) %>% 
+  mutate(prop = prop.table(n)) %>%
+  arrange(desc(n)) %>% 
+  as.data.frame()
 ```
-
 
 
 c. Create a column for whether or not a crash happened on a weekday or on the weekend and then create a data frame that explores if the distribution of collision types varies by whether or not the crash happened during the week or the weekend.
 
+```{r}
+weekday = c(1,2,3,4,5)
+weekend = c(6,7)
+crash$weekday_true = 
+  ifelse(crash$CRASH_WK_DAY_CD %in% weekday, "Yes",
+  ifelse(crash$CRASH_WK_DAY_CD %in% weekend, "No", NA))
+
+crash_weekday <- crash %>% 
+  count(COLLIS_TYP_CD, weekday_true) %>%
+  group_by(weekday_true) %>%
+  mutate(prop = prop.table(n)) %>%
+  arrange(desc(n))
+
+crash_weekday
+
+```
+It seems that the most common collision type (Type 3) happened mostly on weekdays. 
+
 
 d.  First determine what proportion of crashes involve pedestrians.  Then, for each driver license status, determine what proportion of crashes involve pedestrians.  What driver license status has the highest rate of crashes that involve pedestrians?
 
+```{r}
+#proportion of crashes that involve pedestrians
+crash %>% 
+  count(pedestrians_involved = (CRASH_TYP_CD == 3)) %>%
+  mutate(prop = prop.table(n))
 
+#proportion of crashes that involve pedestrians for each driver license status
+crash_and_partic <- left_join (crash, partic, by = c("CRASH_ID" = "CRASH_ID")) 
+crash_and_partic %>%
+  group_by(DRVR_LIC_STAT_CD) %>%
+  count(pedestrians_involved = (CRASH_TYP_CD == 3)) %>%
+  mutate(prop = prop.table(n)) %>%
+  arrange(desc(n))
+
+```
+5.49% of all the crashs involve pedestrians (code 3).\n Driver license type 1 (Valid Oregon license or permit) has the highest rate of crashs (2.9%) that involve pedestrians.
 
 
 e. Create a data frame that contains the age of drivers and collision type. (Don't print it.)  Complete the following:
@@ -132,8 +163,37 @@ e. Create a data frame that contains the age of drivers and collision type. (Don
     
 Draw some conclusions.
 
+```{r}
+collision_type_age <- crash_and_partic %>% 
+  select(COLLIS_TYP_CD, AGE_VAL) 
 
+# Find the average and median age of drivers
+collision_type_age %>%
+  summarize(mean_age = mean(as.numeric(AGE_VAL)), 
+            median_age = median(as.numeric(AGE_VAL)))
 
+# Find the average and median age of drivers by collision type
+collision_type_age %>%
+  group_by(COLLIS_TYP_CD) %>%
+  summarize(mean_age = mean(as.numeric(AGE_VAL)), 
+            median_age = median(as.numeric(AGE_VAL)))
+
+# Create a graph of driver ages
+collision_type_age %>% 
+  ggplot(aes(x = AGE_VAL)) +
+  geom_bar()
+
+# Create a graph of driver ages by collision type
+collision_type_age %>% 
+  ggplot(aes(x = AGE_VAL, fill = COLLIS_TYP_CD)) +
+  geom_dotplot(binwidth = 0.8) +
+  scale_fill_brewer(palette = "Accent") +
+  theme_fivethirtyeight() +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(size = 16)) +
+   ylim(0,900) + 
+  labs(title = "Driver ages by collision type")
+```
 
 
 
@@ -141,27 +201,55 @@ Draw some conclusions.
 
 a. Turning to the CDC data, let's get a handle of what is represented there.  For 2016 (use `YearStart`), how many distinct topics were tracked?
 
-
-
+```{r}
+CDC %>% 
+  filter(YearStart == 2016) %>%
+  count(Topic) %>%
+  nrow()
+```
+16 distinct topics were tracked. 
 
 
 b. Let's study influenza vaccination patterns! Create a dataset that contains the age adjusted prevalence of the "Influenza vaccination among noninstitutionalized adults aged >= 18 years" for Oregon and the US from 2010 to 2016.  
 
+```{r}
+influenza_vacc_prevalance <- CDC %>%
+  filter(YearStart %in% c(2010, 2011, 2012, 2013, 2014, 2015, 2016),
+         Question == "Influenza vaccination among noninstitutionalized adults aged >= 18 years",
+         DataValueType == "Age-adjusted Prevalence") %>%
+  select(YearStart, LocationAbbr, DataValue, DataValueType, Question) %>%
+  arrange(YearStart) %>% 
+  pivot_wider(names_from = DataValueType,
+              values_from = DataValue) %>%
+  as.data.frame()
 
+influenza_vacc_oregon_us <- influenza_vacc_prevalance %>%
+  filter(LocationAbbr%in% c("OR", "US")) 
+
+influenza_vacc_oregon_us
+
+```
 
 c. Create a graph comparing the immunization rates of Pennsylvania and the US.  Comment on the observed trends in your graph
+```{r}
+influenza_vacc_prevalance %>% 
+  filter(LocationAbbr %in% c("PA", "US")) %>%
+  ggplot(aes(x = YearStart, y = `Age-adjusted Prevalence`, color = LocationAbbr)) +
+  geom_line(size = 1)
 
+```
 
 
  
-
 d.  Let's see how immunization rates vary by region of the country. Join the regional dataset to our CDC dataset so that we have a column signifying the region of the country.  
-
+```{r}
+CDC <- left_join (CDC, USregions, by = c("LocationDesc" = "State")) 
+```
 
 
 e. Why are there NAs in the region column of the new dataset?
 
-
+left_join; United States.
 
 f. Create a dataset that contains the age adjusted influenza immunization rates in 2016 for each state in the country and sort it by highest immunization to lowest.  Which state has the highest immunization? 
 
@@ -185,6 +273,8 @@ I was amazed by the fact that many of the FiveThirtyEight datasets are actually 
 
 a. Why is this data not currently in a tidy format?
 
+Each row contains mutiple observations.
+
 ```{r}
 polls
 ```
@@ -192,12 +282,23 @@ polls
 
 b. Create a tidy dataset of the `All polls` subgroup.
 
+```{r}
+polls %>% pivot_wider(names_from = subgroup,
+              values_from = c(dem_estimate, rep_estimate))
+```
 
 c. Now let's create a new untidy version of `polls`.  Focusing just on the estimates for democrats, create a data frame where each row represents a subgroup (given in column 1) and the rest of the columns are the estimates for democrats by date.
-
+```{r}
+polls %>% 
+  select(!rep_estimate) %>%
+  pivot_wider(names_from = modeldate,
+              values_from = dem_estimate)
+```
 
 
 d. Why might someone want to transform the data like we did in part c? 
++ look at one date only and compare the three
++ see the trend 
 
 
 ### Problem 5: YOUR TURN!
