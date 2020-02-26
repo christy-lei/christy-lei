@@ -1,3 +1,5 @@
 # christy-lei
 
-This is created for math 241, lab3
+Hi, I'm Christy Lei.
+
+This is created for Math 241, Lab3
