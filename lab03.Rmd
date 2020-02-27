@@ -17,6 +17,8 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(ggplot2)
 library(ggthemes)
+library(RColorBrewer)
+library("ggpubr")
 ```
 
 
@@ -91,12 +93,14 @@ Each part of this problem will require you to wrangle the data and then do one o
 a. Produce a table that provides the frequency of the different collision types, ordered from most to least common.  What type is most common? What type is least common?
 
 ```{r}
+# Create a frequency table of the different collision types
 crash %>% 
-  count(COLLIS_TYP_CD) %>% 
+  count(COLLIS_TYP_SHORT_DESC) %>% 
   arrange(desc(n)) %>% 
   as.data.frame()
 ```
-Rear-End (type 3) is the most common collision type and Miscellaneous (type &) is the least common one.
+
+Rear-End (REAR) is the most common collision type (n=671) and Miscellaneous (OTHER) is the least common one (n=3).
 
 
 b.  For the three most common collision types, create a table that contains:
@@ -105,55 +109,70 @@ b.  For the three most common collision types, create a table that contains:
     
 Arrange the table by weather and within type, most to least common collision type.  
 ```{r}
+# create a frequency and prop table for the three most collision types 
+# arranged by weather and frequency of types
+
 crash %>% 
-  count(COLLIS_TYP_CD, WTHR_COND_CD) %>%
-  group_by(WTHR_COND_CD) %>% 
+  filter(COLLIS_TYP_SHORT_DESC %in% c("REAR","TURN","ANGL")) %>%
+  group_by(WTHR_COND_SHORT_DESC) %>% 
+  count(COLLIS_TYP_SHORT_DESC, WTHR_COND_SHORT_DESC) %>%
   mutate(prop = prop.table(n)) %>%
-  arrange(desc(n)) %>% 
+  arrange(desc(n), .by_group = TRUE) %>%
   as.data.frame()
 ```
+
 
 
 c. Create a column for whether or not a crash happened on a weekday or on the weekend and then create a data frame that explores if the distribution of collision types varies by whether or not the crash happened during the week or the weekend.
 
 ```{r}
+# create a "weekday_true" column that shows whether a crash happened on a weekday
 weekday = c(1,2,3,4,5)
 weekend = c(6,7)
 crash$weekday_true = 
   ifelse(crash$CRASH_WK_DAY_CD %in% weekday, "Yes",
   ifelse(crash$CRASH_WK_DAY_CD %in% weekend, "No", NA))
 
+# create a data frame that contains collision types and the weekday/weekend info
+# arranged by weekday info and frequency
 crash_weekday <- crash %>% 
-  count(COLLIS_TYP_CD, weekday_true) %>%
+  count(COLLIS_TYP_SHORT_DESC, weekday_true) %>%
   group_by(weekday_true) %>%
   mutate(prop = prop.table(n)) %>%
-  arrange(desc(n))
+  arrange(desc(n), .by_group = TRUE) %>%
+  as.data.frame()
 
 crash_weekday
 
 ```
-It seems that the most common collision type (Type 3) happened mostly on weekdays. 
+It seems that the most common collision types (REAR, TURN, ANGL) happened more often on weekdays. 
 
 
 d.  First determine what proportion of crashes involve pedestrians.  Then, for each driver license status, determine what proportion of crashes involve pedestrians.  What driver license status has the highest rate of crashes that involve pedestrians?
 
 ```{r}
-#proportion of crashes that involve pedestrians
+#determine proportion of crashes that involves pedestrians
 crash %>% 
   count(pedestrians_involved = (CRASH_TYP_SHORT_DESC == "PED")) %>%
-  mutate(prop = prop.table(n))
+  mutate(prop = prop.table(n)) %>%
+  as.data.frame()
 
-#proportion of crashes that involve pedestrians for each driver license status
-crash_and_partic <- left_join (crash, partic, by = c("CRASH_ID" = "CRASH_ID")) 
+#join the crash and partic datasets by "CRASH_ID"
+crash_and_partic <- left_join (crash, partic, 
+                               by = c("CRASH_ID" = "CRASH_ID")) 
+
+#proportion of crashes that involves pedestrians for each driver license status
 crash_and_partic %>%
-  group_by(DRVR_LIC_STAT_CD) %>%
+  group_by(DRVR_LIC_STAT_SHORT_DESC) %>%
   count(pedestrians_involved = (CRASH_TYP_SHORT_DESC == "PED")) %>%
   mutate(prop = prop.table(n)) %>%
   filter(pedestrians_involved == TRUE) %>%
-  arrange(desc(n))
+  arrange(desc(n)) %>%
+  as.data.frame()
 
 ```
-5.49% of all the crashs involve pedestrians. Driver license type 1 (Valid Oregon license or permit) has the highest rate of crashs (2.9%) that involve pedestrians.
+5.49% of all the crashs involves pedestrians. Valid Oregon license or permit (OR-Y/Type 1 license) has the highest rate of crashs (2.9%) that involves pedestrians.
+
 
 
 e. Create a data frame that contains the age of drivers and collision type. (Don't print it.)  Complete the following:
@@ -165,37 +184,62 @@ e. Create a data frame that contains the age of drivers and collision type. (Don
 Draw some conclusions.
 
 ```{r }
-collision_type_age <- crash_and_partic %>% 
-  select(COLLIS_TYP_CD, AGE_VAL) 
+# create a data drame that contains the age of drivers and collision type
+collision_type_age <- crash_and_partic %>%
+  filter(PARTIC_TYP_SHORT_DESC == "DRVR") %>%
+  select(COLLIS_TYP_SHORT_DESC, AGE_VAL) %>%
+  as.data.frame()
 
-# Find the average and median age of drivers
+# find the average and median age of drivers excluding unknown ages (00)
 collision_type_age %>%
+  filter(AGE_VAL != "00") %>% 
   summarize(mean_age = mean(as.numeric(AGE_VAL)), 
             median_age = median(as.numeric(AGE_VAL)))
 
-# Find the average and median age of drivers by collision type
+# find the mean & median age of drivers by collision type without unknown ages
 collision_type_age %>%
-  group_by(COLLIS_TYP_CD) %>%
+  filter(AGE_VAL != "00") %>% 
+  group_by(COLLIS_TYP_SHORT_DESC) %>%
   summarize(mean_age = mean(as.numeric(AGE_VAL)), 
-            median_age = median(as.numeric(AGE_VAL)))
+            median_age = median(as.numeric(AGE_VAL))) %>%
+  arrange(desc(median_age))
 
-# Create a graph of driver ages
+# create a graph of driver ages without unknown ages
 collision_type_age %>% 
-  ggplot(aes(x = AGE_VAL)) +
-  geom_bar()
+  filter(AGE_VAL != "00") %>% 
+  ggplot(aes(x = as.numeric(AGE_VAL))) +
+  geom_bar(binwidth = 2) +
+  scale_x_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90)) +
+  labs(title = "Driver ages",
+       x = "Age", y = "Number of Collisions")
 
-# Create a graph of driver ages by collision type
+# get a palette for the graph
+colourCount = length(unique(collision_type_age$COLLIS_TYP_SHORT_DESC))
+getPalette = colorRampPalette(brewer.pal(12, "Spectral"))
+ 
+# create a graph of driver ages by collision type without unknown ages 
 collision_type_age %>% 
-  filter(AGE_VAL != "00") %>% #filtering out the unknown age
-  ggplot(aes(x = as.numeric(AGE_VAL), fill = COLLIS_TYP_CD)) +
+  filter(AGE_VAL != "00") %>%  
+  ggplot(aes(x = as.numeric(AGE_VAL), fill = COLLIS_TYP_SHORT_DESC)) +
   geom_histogram(binwidth = 2) +
-  scale_fill_brewer(palette = 3, direction = -1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
   scale_x_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90)) +
   theme(plot.title = element_text(size = 16)) +
   theme(axis.text.x = element_text(size = 10)) +
   labs(title = "Driver ages by collision type",
        x = "Age", y = "Number of Collisions", fill = "Collision Type")
+
 ```
+
+
++ After excluding the unknown ages (00), the mean age of drivers is 41 and the median age is 38.
+  
++ After excluding the unknown ages (00), the average age of drivers seems to be the highest for collisions that involve parking maneuver (PARK) and pedestrians (PED), and the average age of drivers seems to be the lowest for types that involve non-collision (NCOL) and fixed-object (FIX).
+   
++ From the histogram that displays the driver ages, the distribution is right-skewed, which means that the drivers are relatively young (in their 20s, 30s, and 40s) in most incidents.
+
++ From the histogram that displays the driver ages by collision type, we can see that for all age groups, the most common types of collisions involve rear-end (REAR), angle (ANGL), and turning movement (TURN).
+
 
 
 
@@ -215,16 +259,20 @@ CDC %>%
 b. Let's study influenza vaccination patterns! Create a dataset that contains the age adjusted prevalence of the "Influenza vaccination among noninstitutionalized adults aged >= 18 years" for Oregon and the US from 2010 to 2016.  
 
 ```{r}
+# create a data frame that contains the age adjusted prevalence
+# of the specified question from 2010 to 2016
 influenza_vacc_prevalance <- CDC %>%
   filter(YearStart %in% c(2010, 2011, 2012, 2013, 2014, 2015, 2016),
          Question == "Influenza vaccination among noninstitutionalized adults aged >= 18 years",
          DataValueType == "Age-adjusted Prevalence") %>%
-  select(YearStart, LocationAbbr, DataValue, DataValueType, Question) %>%
+  select(YearStart, LocationAbbr, DataValue, DataValueType) %>%
   arrange(YearStart) %>% 
   pivot_wider(names_from = DataValueType,
               values_from = DataValue) %>%
   as.data.frame()
 
+# create a data frame that contains the age adjusted prevalence
+# of the specified question from 2010 to 2016 for Oregon and the US
 influenza_vacc_oregon_us <- influenza_vacc_prevalance %>%
   filter(LocationAbbr%in% c("OR", "US")) 
 
@@ -234,36 +282,41 @@ influenza_vacc_oregon_us
 
 c. Create a graph comparing the immunization rates of Pennsylvania and the US.  Comment on the observed trends in your graph
 ```{r}
+# create a graph of immunization rates of PA and the US from 2010 to 2016
 influenza_vacc_prevalance %>% 
   filter(LocationAbbr %in% c("PA", "US")) %>%
   ggplot(aes(x = YearStart, y = `Age-adjusted Prevalence`, 
              color = LocationAbbr)) +
-  geom_line(size = 1)
+  geom_line(size = 1) +
+  labs(x = "Year", y = "Immunization rate (%)",
+       title = "Immunization rates of Pennsylvania and the US")
 
 ```
-  For both Pennsylvania and the US, there is a steady increase in immunization rates from 2011 to 2015 (with the exception of a slight drop in 2012) and there was a huge decrease in immunization rates in 2016.
- 
- In general, the immunization rate in Pennslyvania is lower than that in the US with the exception of year 2015 and 2016.
++ For both Pennsylvania and the US, there is a steady increase in immunization rates from 2011 to 2015 (with the exception of a slight drop in 2012), followed by a decrease in immunization rates in 2016. In general, the immunization rate in Pennslyvania is slightly lower than that in the US with the exception of year 2015 and 2016.
  
 d.  Let's see how immunization rates vary by region of the country. Join the regional dataset to our CDC dataset so that we have a column signifying the region of the country.  
 ```{r}
+# join the regional dataset to CDC dataset
 CDC <- left_join (CDC, USregions, by = c("LocationDesc" = "State")) 
 ```
 
 
 e. Why are there NAs in the region column of the new dataset?
 
-A left join in question (d) returns all rows from CDC, and all columns from CDC and USregions. However, some location names used in the CDC dataset (55 locations for the LocationDesc variable) are not present in the dataset USregions (50 locations for the State variable), so this creates NAs for the variable Region in the new dataset.
++ A left join in question (d) returns all rows from CDC and all columns from CDC and USregions. However, some location names used in the CDC dataset (55 locations under `LocationDesc`) are not present in the USRegions dataset (50 locations under `State`), so this creates NAs for the variable `Region` in the new dataset.
 
 
 f. Create a dataset that contains the age adjusted influenza immunization rates in 2016 for each state in the country and sort it by highest immunization to lowest.  Which state has the highest immunization? 
 
 ```{r}
+# create a data frame that contains the age adjusted immunization rates
+# in 2016 for each state
+
 immunization_by_state <- CDC %>%
   filter(YearStart == 2016, 
          Question == "Influenza vaccination among noninstitutionalized adults aged >= 18 years",
          DataValueType == "Age-adjusted Prevalence") %>% 
-  select(YearStart, LocationAbbr, DataValue, DataValueType, Question, Region) %>%
+  select(YearStart, LocationAbbr, DataValue, DataValueType, Region) %>%
   pivot_wider(names_from = DataValueType,
               values_from = DataValue) %>%
   arrange(desc(`Age-adjusted Prevalence`)) %>%
@@ -273,19 +326,20 @@ immunization_by_state
 
 ```
 
-South Dakota has the highest immunization rate.
+South Dakota has the highest immunization rate in 2016.
 
 
 g. Construct a graphic of the 2016 influenza immunization rates by region of the country.  Don't include locations without a region. Comment on your graphic.
 ```{r}
+# create a graph of the immunization rates in 2016 by region
 immunization_by_state %>%
   drop_na() %>%
   ggplot(aes(x = Region, y = `Age-adjusted Prevalence`, fill = Region)) +
   geom_boxplot() + geom_point(width = 1, alpha = 0.2) +
-  labs(y = "Age-adjusted Prevalence Rate") 
+  labs(y = "Age-adjusted Immunization Rate") 
 ```
 
-In 2016, NE has the highest median of the influenza immunization rates compared to other regions, and MW has the largest IQR which means the immunization rates are the most spread. FOR S and W, the influenza immunization rates are similar in terms of the average (i.e. median) and variability (i.e. IQR).
+In 2016, the Northeast (NE) has the highest average of the influenza immunization rates compared to the other regions, and the Midwest (MW) has the largest IQR which means the immunization rates for the states in MW are more variable. The South (S) and the West (W) have a similar pattern of influenza immunization prevalence in terms of the average (i.e. median) and variability (i.e. IQR).
 
 
 ### Problem 4: Tidying Data Like a Boss
@@ -296,7 +350,7 @@ I was amazed by the fact that many of the FiveThirtyEight datasets are actually 
 
 a. Why is this data not currently in a tidy format?
 
-Some rows contain mutiple observations.
++ The rows contain mutiple observations (e.g. for each date, "All polls" also include data from "Voters" and "Adults").
 
 ```{r}
 polls
@@ -306,8 +360,13 @@ polls
 b. Create a tidy dataset of the `All polls` subgroup.
 
 ```{r}
-polls %>% pivot_wider(names_from = subgroup,
-              values_from = c(dem_estimate, rep_estimate))
+tidy_poll <- polls %>% 
+  pivot_wider(names_from = subgroup,
+              values_from = c(dem_estimate, rep_estimate)) %>%
+  as.data.frame()
+
+# display the first few rows for the new dataset
+head(tidy_poll,3)
 ```
 
 c. Now let's create a new untidy version of `polls`.  Focusing just on the estimates for democrats, create a data frame where each row represents a subgroup (given in column 1) and the rest of the columns are the estimates for democrats by date.
@@ -315,46 +374,92 @@ c. Now let's create a new untidy version of `polls`.  Focusing just on the estim
 untidy_poll <- polls %>% 
   select(!rep_estimate) %>%
   pivot_wider(names_from = modeldate,
-              values_from = dem_estimate) 
+              values_from = dem_estimate) %>%
+  as.data.frame()
 
-untidy_poll %>%
-  ggplot(aes())
+# display the first few columns for the new dataset
+untidy_poll[0:7]
 ```
 
 
 d. Why might someone want to transform the data like we did in part c? 
-+ They are interested in comparing estimates of votes from the three subgroups on a particular day 
-+ They just want to scroll horizontally to see if there's a general trend of increasing or decreasing number of estimates. 
++ They want to scroll horizontally to see if there's a general trend of increasing or decreasing number of estimates over time for a particular subgroup
++ They are interested in comparing the estimates of votes from the three subgroups on a particular day (e.g. on July 4th)
++ They can quickly see which subgroup has a "NA" value for each date
 
 
 ### Problem 5: YOUR TURN!
 
 Now it is your turn.  Pick one (or multiple) of the datasets used on this lab.  Ask a question of the data.  Do some data wrangling to produce statistics (use at least two wrangling verbs) and a graphic to answer the question.  Then comment on any conclusions you can draw about your question.
 
-+ For the CDC dataset: I want to explore more for the question "Recent mentally unhealthy days among adults aged >= 18 years". I'm curious to learn about the trend of the mean number of mentally unhealthy days among adults from year 2010 to 2016, and how that differs in each region.
++ For the CDC dataset: I want to explore more about the data under the topic "Mental Health" and "Alcohol", especially the relationship between the question "Recent mentally unhealthy days among adults aged >= 18 years" and "Binge drinking prevalence among adults aged >= 18 years".
 
-```{r fig.width = 8}
+    I'm curious to know if the trend of the average number of mentally unhealthy days is similar to the crude prevalance of binge drinking over the years, and how that differs in each region.
+
+```{r fig.width = 10}
+# create a data frame that has the mean of the recently mentally unhealthy days
 mental_health_region <- CDC %>%
-  filter(YearStart %in% c(2010,2011,2012,2013,2014,2015,2016), 
-         Question == "Recent mentally unhealthy days among adults aged >= 18 years",
+  filter(Question == "Recent mentally unhealthy days among adults aged >= 18 years",
          DataValueType == "Mean") %>% 
-  select(YearStart, DataValue, DataValueType, Question, Region, LocationAbbr) %>%
+  select(YearStart, DataValue, DataValueType, Region, LocationAbbr) %>%
   pivot_wider(names_from = DataValueType,
               values_from = DataValue) %>%
-  arrange(desc(YearStart)) %>%
   as.data.frame() 
 
-mental_health_region %>% 
+# create a data frame that has the crude prevalence of binge drinking prevalence
+binge_drinking_region <- CDC %>%
+  filter(YearStart %in% c(2010,2011,2012,2013,2014,2015,2016),
+         Question %in% c("Binge drinking prevalence among adults aged >= 18 years"),
+         DataValueType == "Crude Prevalence") %>%
+  pivot_wider(names_from = DataValueType,
+              values_from = DataValue) %>%
+  select(YearStart, Topic, `Crude Prevalence`, Region, LocationAbbr) %>%
+  drop_na() %>%
+  as.data.frame() 
+
+
+# create a graph that displays the trend over the years by region for 
+# mentally unhealthy days 
+mental_health_region <- mental_health_region %>% 
   drop_na() %>%
   ggplot(aes(x = factor(YearStart), y = Mean, fill = Region)) +
   geom_boxplot() +
   geom_jitter(width = 0.1, alpha = 0.2) +
   xlab("Year") +
-  ylab("Mean of recent mentally unhealthy days among adults") +
+  ylab("Mean # of recent mentally unhealthy days") +
   facet_wrap(~Region, ncol = 4) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
+# create a graph that displays the trend over the years by region for binge drinking
+binge_drinking_region <- binge_drinking_region %>% 
+  drop_na() %>%
+  ggplot(aes(x = factor(YearStart), y = `Crude Prevalence`, fill = Region)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  xlab("Year") +
+  ylab("Crude prevalence of binge drinking") +
+  facet_wrap(~Region, ncol = 4) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+# combine the two graphs together for comparison
+ggarrange(mental_health_region, binge_drinking_region, 
+          labels = c("A", "B"), common.legend = TRUE, legend = "bottom")
 ```
 
-In S, adults consistanly experience more mentally unhealthy days compared to other regions. For all regions, it seems that there the mean number of mentally unstable days stayed the same throughout the years. 
++ **Mentally unhealthy days**: adults who live in the South (S) consistanly experience more mentally unhealthy days compared to those in the other regions. For all regions, it seems that the mean number of mentally unhealthy days stayed relatively stable throughout the years. 
+
+    It's also worthy to note that the IQRs are the largest for the states in the Midwest (MW), which means that there's a higher variability in the mean number of mentally unhealthy days among adults who are from different states in the MW.
+
++ **Binge drinking prevalence**: the binge drinking prevalence rate for adults who live in the South (S) is the lowest among the four regions, whereas binge drinking is the most prevalent in the Midwest (MW). For all regions, it seems that the binge drinking prevalence is decreasing throughout the years. 
+
+    It's also worthy to note that the IQRs are the smallest for the states in the Northeast (NE), which means that there's a low variability in the binge drinking prevalence among adults who are from different states in the NE.
+    
++ **Compare the two questions**: it's interesting that the South (S) has the lowest binge drinking prevalence but the highest mean number of mentally unhealthy days, while the Midwest (MW) has the highest binge drinking prevalence but the lowest mean number of mentally unhealthy days. This is contrary to my expectation that more binge drinking is positively related to more mental health problems. 
+
+    Also, I noticed that in both graphs the IQRs are the largest for the MW. This might indicate that the between-states difference is the largest in the Midwest compared to that in other regions for other measures as well.
+
+
+
+
+
 
